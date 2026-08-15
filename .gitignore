@@ -1,0 +1,41 @@
+# Modellgewichte - gehoeren nach C:\Users\morit\models\, nie ins Repo
+*.gguf
+*.gguf.part
+*.safetensors
+*.bin
+
+# Datenbanken der Messanwendung
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Logs und Messrohdaten
+logs/
+*.log
+
+# Lokales
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

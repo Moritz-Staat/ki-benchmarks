@@ -1,0 +1,24 @@
+#!/bin/sh
+# Gitleaks-Pre-Commit-Hook.
+# Prueft nur die gestagten Aenderungen und bricht den Commit bei einem Fund ab.
+#
+# Aktiviert durch:  git config core.hooksPath .githooks
+# Einmalig umgehen: git commit --no-verify
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "gitleaks nicht gefunden - Commit wird abgebrochen."
+    echo "Entweder gitleaks installieren oder bewusst mit --no-verify committen."
+    exit 1
+fi
+
+gitleaks git --staged --redact --no-banner
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo ""
+    echo "gitleaks hat ein mutmassliches Secret in den gestagten Aenderungen gefunden."
+    echo "Commit abgebrochen. Bei einem Fehlalarm: Regel in .gitleaks.toml ergaenzen."
+    exit 1
+fi
+
+exit 0
