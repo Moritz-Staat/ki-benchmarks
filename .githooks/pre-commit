@@ -11,7 +11,9 @@ if ! command -v gitleaks >/dev/null 2>&1; then
     exit 1
 fi
 
-gitleaks git --staged --redact --no-banner
+# --pre-commit --staged zusammen: scannt den Index, nicht die Commit-Historie.
+# "gitleaks git --staged" allein meldet "0 commits scanned" und laesst alles durch.
+gitleaks git --pre-commit --staged --redact --no-banner
 status=$?
 
 if [ $status -ne 0 ]; then
