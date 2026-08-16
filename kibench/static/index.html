@@ -537,11 +537,23 @@ document.querySelectorAll("[data-fenster]").forEach(b => {
   });
 });
 
-document.getElementById("b-tabelle").addEventListener("click", (e) => {
-  const an = document.getElementById("tabellenbereich").classList.toggle("sichtbar");
-  e.target.setAttribute("aria-pressed", String(an));
+function tabelleUmschalten(an) {
+  document.getElementById("tabellenbereich").classList.toggle("sichtbar", an);
+  document.getElementById("b-tabelle").setAttribute("aria-pressed", String(an));
   if (an) holeModelle();
-});
+}
+
+document.getElementById("b-tabelle").addEventListener("click", () =>
+  tabelleUmschalten(!document.getElementById("tabellenbereich").classList.contains("sichtbar")));
+
+/* Verlinkbar: /?tabelle=1 öffnet die Tabellenansicht direkt. Praktisch, um sie
+   ohne Klick zu prüfen — und um jemandem die Zahlen zu schicken. */
+const params = new URLSearchParams(location.search);
+if (params.get("tabelle") === "1") tabelleUmschalten(true);
+if (params.get("fenster")) {
+  const b = document.querySelector(`[data-fenster="${params.get("fenster")}"]`);
+  if (b) b.click();
+}
 
 aufbauen();
 holeJetzt(); holeVerlauf(); holeStatus();
