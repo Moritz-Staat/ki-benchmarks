@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ki-benchmarks — Live</title>
+<link rel="stylesheet" href="/static/vendor/uPlot.min.css">
+<style>
+/* Dunkel und nur dunkel: die Seite steht neben Terminalfenstern.
+   Farben aus der validierten Palette (dark), Flaeche #1a1a19. */
+:root {
+  color-scheme: dark;
+  --plane:        #0d0d0d;
+  --surface:      #1a1a19;
+  --ink:          #ffffff;
+  --ink-2:        #c3c2b7;
+  --ink-muted:    #898781;
+  --grid:         #2c2c2a;
+  --axis:         #383835;
+  --ring:         rgba(255,255,255,0.10);
+
+  --s1: #3987e5;   /* Slot 1 blau   */
+  --s2: #d95926;   /* Slot 2 orange */
+  --s3: #199e70;   /* Slot 3 aqua   */
+
+  --good:     #0ca30c;
+  --warning:  #fab219;
+  --critical: #d03b3b;
+
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 20px 24px 48px;
+  background: var(--plane); color: var(--ink);
+  font-family: var(--font); font-size: 14px; line-height: 1.5;
+}
+
+h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 13px; font-weight: 600; margin: 0 0 2px; color: var(--ink); }
+.unter { font-size: 12px; color: var(--ink-muted); margin: 0 0 12px; }
+
+/* --- Kopf und Filterzeile ------------------------------------------------ */
+header {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--axis);
+}
+.pille {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--ink-2);
+  padding: 4px 10px; border: 1px solid var(--ring); border-radius: 999px;
+}
+.punkt { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-muted); }
+.punkt.an   { background: var(--good); }
+.punkt.aus  { background: var(--ink-muted); }
+.punkt.warn { background: var(--warning); }
+
+.filterzeile { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+.filterzeile span { font-size: 12px; color: var(--ink-muted); margin-right: 4px; }
+button {
+  font-family: var(--font); font-size: 12px; color: var(--ink-2);
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 7px;
+  padding: 6px 12px; cursor: pointer; min-height: 30px;
+}
+button:hover { border-color: var(--ink-muted); color: var(--ink); }
+button[aria-pressed="true"] { background: #24243f; border-color: var(--s1); color: var(--ink); }
+
+/* --- Warnungen ----------------------------------------------------------- */
+#warnungen { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.warnung {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 13px; border-radius: 8px; font-size: 13px;
+  border: 1px solid; background: var(--surface);
+}
+/* Icon + Text, nie Farbe allein - Vorgabe fuer Statusfarben. */
+.warnung .zeichen { font-weight: 700; font-size: 13px; }
+.warnung.kritisch { border-color: var(--critical); color: #f0a5a5; }
+.warnung.kritisch .zeichen { color: var(--critical); }
+.warnung.warnung  { border-color: var(--warning);  color: #e8cf94; }
+.warnung.warnung .zeichen { color: var(--warning); }
+
+/* --- Kachelreihe --------------------------------------------------------- */
+.kacheln {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px; margin-bottom: 22px;
+}
+.kachel {
+  background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 10px; padding: 12px 14px;
+}
+.kachel .titel { font-size: 11px; color: var(--ink-muted); margin-bottom: 5px;
+                 text-transform: uppercase; letter-spacing: 0.04em; }
+/* Proportionale Ziffern, kein tabular-nums bei grossen Einzelzahlen. */
+.kachel .wert  { font-size: 25px; font-weight: 600; letter-spacing: -0.02em; }
+.kachel .wert .einheit { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 3px; }
+.kachel .neben { font-size: 11px; color: var(--ink-muted); margin-top: 3px; }
+.kachel.achtung { border-color: var(--critical); }
+
+/* --- Diagramme ----------------------------------------------------------- */
+.gitter { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 14px; }
+.karte {
+  background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 10px; padding: 14px 16px 10px; min-width: 0;
+}
+.karte.breit { grid-column: 1 / -1; }
+.diagramm { width: 100%; }
+
+.legende { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 8px; font-size: 12px; color: var(--ink-2); }
+.legende span { display: inline-flex; align-items: center; gap: 6px; }
+.legende i { width: 11px; height: 3px; border-radius: 2px; display: inline-block; }
+
+/* uPlot an das dunkle Umfeld anpassen: Hairlines, keine Striche. */
+.uplot { font-family: var(--font); }
+.u-axis { color: var(--ink-muted); }
+.u-select { background: rgba(57,135,229,0.16); }
+
+.tooltip {
+  position: absolute; pointer-events: none; z-index: 20;
+  background: #101010; border: 1px solid var(--ring); border-radius: 8px;
+  padding: 7px 10px; font-size: 12px; color: var(--ink-2);
+  white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,0.5); display: none;
+}
+.tooltip b { color: var(--ink); font-weight: 600; }
+.tooltip .zeit { color: var(--ink-muted); display: block; margin-bottom: 4px;
+                 font-variant-numeric: tabular-nums; }
+
+/* --- Tabellenansicht ----------------------------------------------------- */
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-muted); font-weight: 500; font-size: 12px; }
+td.zahl, th.zahl { text-align: right; font-variant-numeric: tabular-nums; }
+.tabellenbereich { display: none; }
+.tabellenbereich.sichtbar { display: block; }
+
+.laedt { opacity: 0.55; transition: opacity 120ms; }
+footer { margin-top: 26px; font-size: 12px; color: var(--ink-muted); }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ki-benchmarks — Live</h1>
+  <span class="pille"><i class="punkt" id="p-sampler"></i><span id="t-sampler">Sampler …</span></span>
+  <span class="pille"><i class="punkt" id="p-llama"></i><span id="t-llama">llama-server</span></span>
+  <span class="pille"><i class="punkt" id="p-ollama"></i><span id="t-ollama">Ollama</span></span>
+  <div class="filterzeile">
+    <span>Zeitraum</span>
+    <button data-fenster="5m"    aria-pressed="true">5 Min</button>
+    <button data-fenster="15m"   aria-pressed="false">15 Min</button>
+    <button data-fenster="1h"    aria-pressed="false">1 Std</button>
+    <button data-fenster="6h"    aria-pressed="false">6 Std</button>
+    <button data-fenster="heute" aria-pressed="false">Heute</button>
+    <button id="b-tabelle" aria-pressed="false">Tabelle</button>
+  </div>
+</header>
+
+<div id="warnungen"></div>
+
+<div class="kacheln" id="kacheln"></div>
+
+<div class="gitter">
+  <div class="karte breit">
+    <h2>VRAM und RAM</h2>
+    <p class="unter">Beides als Anteil der jeweiligen Kapazität — 16 GB VRAM, 64 GB RAM.
+       Gemeinsame Achse statt zwei Skalen: steigt RAM, während VRAM an der Decke klebt,
+       ist das ausgelagerte Gewichte.</p>
+    <div class="legende">
+      <span><i style="background:var(--s1)"></i>VRAM gesamt</span>
+      <span><i style="background:var(--s2)"></i>RAM</span>
+      <span><i style="background:var(--s3)"></i>VRAM fremder Prozesse</span>
+    </div>
+    <div class="diagramm" id="d-speicher"></div>
+  </div>
+
+  <div class="karte">
+    <h2>Generierung</h2>
+    <p class="unter">Tokens pro Sekunde, llama-server</p>
+    <div class="diagramm" id="d-gen"></div>
+  </div>
+
+  <div class="karte">
+    <h2>Prompt-Verarbeitung</h2>
+    <p class="unter">Tokens pro Sekunde, llama-server</p>
+    <div class="diagramm" id="d-prompt"></div>
+  </div>
+
+  <div class="karte">
+    <h2>GPU-Temperatur</h2>
+    <p class="unter">Throttling ab 83 °C</p>
+    <div class="diagramm" id="d-temp"></div>
+  </div>
+
+  <div class="karte">
+    <h2>GPU-Takt</h2>
+    <p class="unter">SM-Takt in MHz</p>
+    <div class="diagramm" id="d-takt"></div>
+  </div>
+
+  <div class="karte">
+    <h2>KV-Cache</h2>
+    <p class="unter">Belegung in Prozent</p>
+    <div class="diagramm" id="d-kv"></div>
+  </div>
+
+  <div class="karte">
+    <h2>GPU-Auslastung</h2>
+    <p class="unter">Prozent</p>
+    <div class="diagramm" id="d-gpu"></div>
+  </div>
+</div>
+
+<div class="tabellenbereich" id="tabellenbereich">
+  <div class="karte breit" style="margin-top:14px">
+    <h2>Tabellenansicht</h2>
+    <p class="unter">Dieselben Werte ohne Farbkodierung — jeder Messwert bleibt auch ohne
+       Diagramm lesbar.</p>
+    <table id="t-jetzt"></table>
+  </div>
+  <div class="karte breit" style="margin-top:14px">
+    <h2>VRAM je Prozess</h2>
+    <p class="unter">Quelle: Windows-Leistungsindikator <code>GPU Process Memory</code>.
+       NVML kann das auf dieser Karte nicht — siehe <code>kibench/gpu.py</code>.</p>
+    <table id="t-prozesse"></table>
+  </div>
+  <div class="karte breit" style="margin-top:14px">
+    <h2>Modelle</h2>
+    <p class="unter">Konfiguriert laut <code>SETUP.md</code>, und was gerade antwortet.</p>
+    <table id="t-modelle"></table>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<footer>
+  Sampler misst jede Sekunde nach SQLite · Seite bindet auf 127.0.0.1 ·
+  <span id="f-status"></span>
+</footer>
+
+<script src="/static/vendor/uPlot.iife.min.js"></script>
+<script>
+"use strict";
+
+const FARBE = { s1: "#3987e5", s2: "#d95926", s3: "#199e70",
+                grid: "#2c2c2a", axis: "#383835", muted: "#898781",
+                warnung: "#fab219", kritisch: "#d03b3b" };
+
+let fenster = "5m";
+let diagramme = {};
+let letzterVerlauf = null;
+let letzteSchwellen = {};
+const tooltip = document.getElementById("tooltip");
+
+/* --- Hilfen -------------------------------------------------------------- */
+
+const z = (v, n = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(n);
+const uhr = (ts) => new Date(ts * 1000).toLocaleTimeString("de-DE");
+
+/* Schwellenlinie als Hairline. Bewusst kein zusaetzlicher Datensatz, sonst
+   stuende die Schwelle als Serie in der Legende. */
+function schwellenlinie(wert, farbe) {
+  return {
+    hooks: {
+      draw: [(u) => {
+        if (wert === null || wert === undefined) return;
+        const y = u.valToPos(wert, "y", true);
+        if (!Number.isFinite(y) || y < u.bbox.top || y > u.bbox.top + u.bbox.height) return;
+        const ctx = u.ctx;
+        ctx.save();
+        ctx.strokeStyle = farbe; ctx.lineWidth = 1; ctx.globalAlpha = 0.55;
+        ctx.beginPath(); ctx.moveTo(u.bbox.left, y);
+        ctx.lineTo(u.bbox.left + u.bbox.width, y); ctx.stroke();
+        ctx.restore();
+      }]
+    }
+  };
+}
+
+/* Crosshair-Tooltip. Pflicht laut Vorgabe: ein HTML-Diagramm ist interaktiv. */
+function tooltipPlugin(reihen) {
+  return {
+    hooks: {
+      setCursor: [(u) => {
+        const { idx, left, top } = u.cursor;
+        if (idx === null || idx === undefined || left < 0) { tooltip.style.display = "none"; return; }
+        const ts = u.data[0][idx];
+        let html = `<span class="zeit">${uhr(ts)}</span>`;
+        reihen.forEach((r, i) => {
+          const v = u.data[i + 1][idx];
+          if (v === null || v === undefined) return;
+          html += `<div><i style="display:inline-block;width:9px;height:3px;border-radius:2px;`
+                + `background:${r.farbe};margin-right:6px;vertical-align:middle"></i>`
+                + `${r.label} <b>${z(v, r.stellen ?? 1)}</b> ${r.einheit}</div>`;
+        });
+        const rect = u.root.getBoundingClientRect();
+        tooltip.innerHTML = html;
+        tooltip.style.display = "block";
+        tooltip.style.left = (rect.left + window.scrollX + left + 14) + "px";
+        tooltip.style.top  = (rect.top  + window.scrollY + top  - 10) + "px";
+      }],
+      setSeries: [() => { tooltip.style.display = "none"; }]
+    }
+  };
+}
+
+function baueDiagramm(elId, reihen, opts = {}) {
+  const el = document.getElementById(elId);
+  const plugins = [tooltipPlugin(reihen)];
+  if (opts.schwelle !== undefined && opts.schwelle !== null) {
+    plugins.push(schwellenlinie(opts.schwelle, opts.schwelleFarbe || FARBE.kritisch));
+  }
+  const conf = {
+    width: el.clientWidth || 600,
+    height: opts.hoehe || 190,
+    padding: [10, 12, 0, 0],
+    cursor: { y: false, points: { size: 8 } },
+    legend: { show: false },
+    plugins,
+    scales: { x: { time: true }, y: opts.yBereich ? { range: opts.yBereich } : {} },
+    axes: [
+      { stroke: FARBE.muted, grid: { stroke: FARBE.grid, width: 1 },
+        ticks: { stroke: FARBE.axis, width: 1 }, font: "11px system-ui" },
+      { stroke: FARBE.muted, grid: { stroke: FARBE.grid, width: 1 },
+        ticks: { stroke: FARBE.axis, width: 1 }, font: "11px system-ui",
+        size: 46, label: opts.yLabel, labelSize: opts.yLabel ? 26 : 0,
+        labelFont: "11px system-ui" }
+    ],
+    series: [
+      {},
+      ...reihen.map(r => ({
+        label: r.label, stroke: r.farbe, width: 2,
+        fill: r.flaeche || null, points: { show: false }, spanGaps: true
+      }))
+    ]
+  };
+  const u = new uPlot(conf, [[], ...reihen.map(() => [])], el);
+  new ResizeObserver(() => u.setSize({ width: el.clientWidth, height: conf.height })).observe(el);
+  return u;
+}
+
+/* --- Aufbau -------------------------------------------------------------- */
+
+function aufbauen() {
+  diagramme.speicher = baueDiagramm("d-speicher", [
+    { label: "VRAM gesamt", farbe: FARBE.s1, einheit: "%", stellen: 1 },
+    { label: "RAM",         farbe: FARBE.s2, einheit: "%", stellen: 1 },
+    { label: "VRAM fremd",  farbe: FARBE.s3, einheit: "%", stellen: 1 },
+  ], { hoehe: 230, yBereich: [0, 100], yLabel: "% der Kapazität" });
+
+  diagramme.gen    = baueDiagramm("d-gen",    [{ label: "Generierung", farbe: FARBE.s1, einheit: "tok/s", stellen: 2 }], { yLabel: "tok/s" });
+  diagramme.prompt = baueDiagramm("d-prompt", [{ label: "Prompt",      farbe: FARBE.s1, einheit: "tok/s", stellen: 0 }], { yLabel: "tok/s" });
+  diagramme.temp   = baueDiagramm("d-temp",   [{ label: "Temperatur",  farbe: FARBE.s1, einheit: "°C",    stellen: 0 }], { yLabel: "°C", schwelle: 83 });
+  diagramme.takt   = baueDiagramm("d-takt",   [{ label: "SM-Takt",     farbe: FARBE.s1, einheit: "MHz",   stellen: 0 }], { yLabel: "MHz" });
+  diagramme.kv     = baueDiagramm("d-kv",     [{ label: "KV-Cache",    farbe: FARBE.s1, einheit: "%",     stellen: 1 }], { yLabel: "%", yBereich: [0, 100] });
+  diagramme.gpu    = baueDiagramm("d-gpu",    [{ label: "Auslastung",  farbe: FARBE.s1, einheit: "%",     stellen: 0 }], { yLabel: "%", yBereich: [0, 100] });
+}
+
+/* --- Daten holen --------------------------------------------------------- */
+
+async function holeVerlauf() {
+  const r = await fetch(`/api/verlauf?fenster=${fenster}`);
+  const d = await r.json();
+  const s = d.spalten;
+  letzterVerlauf = d;
+  letzteSchwellen = d.schwellen;
+
+  const x = s.ts;
+  const vramTotal = d.schwellen.vram_total_mib;
+  const ramTotal  = d.schwellen.ram_total_gib;
+
+  const alsProzent = (arr, gesamt) => arr.map(v => v === null ? null : (v / gesamt) * 100);
+
+  diagramme.speicher.setData([x,
+    alsProzent(s.vram_used_mib, vramTotal),
+    alsProzent(s.ram_used_gib, ramTotal),
+    alsProzent(s.vram_fremd_mib, vramTotal)]);
+  diagramme.gen.setData([x, s.llama_gen_tps]);
+  diagramme.prompt.setData([x, s.llama_prompt_tps]);
+  diagramme.temp.setData([x, s.gpu_temp_c]);
+  diagramme.takt.setData([x, s.gpu_clock_sm_mhz]);
+  diagramme.kv.setData([x, s.llama_kv_cache_pct]);
+  diagramme.gpu.setData([x, s.gpu_util_pct]);
+
+  document.getElementById("f-status").textContent =
+    `${d.punkte} Punkte im Fenster „${d.fenster}“`;
+}
+
+function kachel(titel, wert, einheit, neben, achtung) {
+  return `<div class="kachel${achtung ? " achtung" : ""}">
+    <div class="titel">${titel}</div>
+    <div class="wert">${wert}${einheit ? `<span class="einheit">${einheit}</span>` : ""}</div>
+    ${neben ? `<div class="neben">${neben}</div>` : ""}
+  </div>`;
+}
+
+async function holeJetzt() {
+  const r = await fetch("/api/jetzt");
+  const d = await r.json();
+  if (!d.vorhanden) return;
+  const s = d.sample;
+
+  const felder = new Set(d.warnungen.map(w => w.feld));
+
+  document.getElementById("kacheln").innerHTML = [
+    kachel("Generierung", z(s.llama_gen_tps, 2), "tok/s",
+           s.llama_model ? s.llama_model : "kein llama-server", felder.has("tps")),
+    kachel("Prompt", z(s.llama_prompt_tps, 0), "tok/s", "Verarbeitung", false),
+    kachel("VRAM", z(s.vram_used_mib / 1024, 2), "GB",
+           `von 16 GB · ${s.vram_free_mib} MiB frei`, felder.has("vram")),
+    kachel("RAM", z(s.ram_used_gib, 1), "GB", "von 64 GB", felder.has("ram")),
+    kachel("GPU", z(s.gpu_util_pct, 0), "%", `Speicher-Bus ${z(s.gpu_mem_util_pct, 0)} %`, false),
+    kachel("Temperatur", z(s.gpu_temp_c, 0), "°C", `Takt ${z(s.gpu_clock_sm_mhz, 0)} MHz`, felder.has("temp")),
+    kachel("Leistung", z(s.gpu_power_w, 0), "W", "GPU", false),
+    kachel("Fremd-VRAM", z(s.vram_fremd_mib, 0), "MiB",
+           `Schwankung ${d.fremd_vram_schwankung_mib} MiB`, felder.has("fremd_vram")),
+  ].join("");
+
+  document.getElementById("warnungen").innerHTML = d.warnungen.map(w =>
+    `<div class="warnung ${w.stufe === "kritisch" ? "kritisch" : "warnung"}">
+       <span class="zeichen">${w.stufe === "kritisch" ? "!" : "△"}</span>
+       <span>${w.text}</span></div>`).join("");
+
+  setPunkt("llama",  s.llama_alive,  s.llama_alive ? (s.llama_model || "llama-server") : "llama-server aus");
+  setPunkt("ollama", s.ollama_alive,
+    s.ollama_alive ? `Ollama · ${(s.ollama_modelle || []).length} geladen` : "Ollama aus");
+
+  fuelleTabellen(d);
+}
+
+function setPunkt(name, an, text) {
+  document.getElementById("p-" + name).className = "punkt " + (an ? "an" : "aus");
+  document.getElementById("t-" + name).textContent = text;
+}
+
+async function holeStatus() {
+  const r = await fetch("/api/status");
+  const d = await r.json();
+  const ok = d.laeuft && d.fehler === 0;
+  document.getElementById("p-sampler").className = "punkt " + (d.laeuft ? (ok ? "an" : "warn") : "aus");
+  const std = Math.floor(d.laufzeit_s / 3600), min = Math.floor((d.laufzeit_s % 3600) / 60);
+  document.getElementById("t-sampler").textContent =
+    `${d.messungen.toLocaleString("de-DE")} Messungen · ${std} h ${min} min` +
+    (d.fehler ? ` · ${d.fehler} Fehler` : "");
+}
+
+/* --- Tabellenansicht ----------------------------------------------------- */
+
+function zeile(k, v) { return `<tr><td>${k}</td><td class="zahl">${v}</td></tr>`; }
+
+function fuelleTabellen(d) {
+  const s = d.sample;
+  document.getElementById("t-jetzt").innerHTML =
+    `<tr><th>Messwert</th><th class="zahl">Wert</th></tr>` + [
+      zeile("Zeitpunkt", s.ts_iso),
+      zeile("Generierung (tok/s)", z(s.llama_gen_tps, 2)),
+      zeile("Prompt (tok/s)", z(s.llama_prompt_tps, 1)),
+      zeile("Geladenes Modell", s.llama_model || "—"),
+      zeile("VRAM belegt (MiB)", z(s.vram_used_mib, 0)),
+      zeile("VRAM frei (MiB)", z(s.vram_free_mib, 0)),
+      zeile("VRAM llama-server (MiB)", z(s.vram_llama_mib, 0)),
+      zeile("VRAM Ollama (MiB)", z(s.vram_ollama_mib, 0)),
+      zeile("VRAM fremd (MiB)", z(s.vram_fremd_mib, 0)),
+      zeile("Fremd-VRAM Schwankung (MiB)", d.fremd_vram_schwankung_mib),
+      zeile("RAM belegt (GB)", z(s.ram_used_gib, 2)),
+      zeile("Pagefile (GB)", z(s.pagefile_used_gib, 2)),
+      zeile("CPU (%)", z(s.cpu_pct, 1)),
+      zeile("GPU-Auslastung (%)", z(s.gpu_util_pct, 0)),
+      zeile("GPU-Temperatur (°C)", z(s.gpu_temp_c, 0)),
+      zeile("SM-Takt (MHz)", z(s.gpu_clock_sm_mhz, 0)),
+      zeile("Speichertakt (MHz)", z(s.gpu_clock_mem_mhz, 0)),
+      zeile("Leistung (W)", z(s.gpu_power_w, 1)),
+      zeile("KV-Cache (%)", z(s.llama_kv_cache_pct, 2)),
+      zeile("KV-Cache (Token)", z(s.llama_kv_cache_tokens, 0)),
+      zeile("Disk lesen (MiB/s)", z(s.disk_read_mibs, 2)),
+      zeile("Disk schreiben (MiB/s)", z(s.disk_write_mibs, 2)),
+    ].join("");
+
+  document.getElementById("t-prozesse").innerHTML =
+    `<tr><th>Prozess</th><th class="zahl">PID</th><th class="zahl">VRAM (MiB)</th></tr>` +
+    (s.vram_prozesse || []).map(p =>
+      `<tr><td>${p.name}</td><td class="zahl">${p.pid}</td><td class="zahl">${p.mib}</td></tr>`).join("");
+}
+
+async function holeModelle() {
+  const r = await fetch("/api/modelle");
+  const d = await r.json();
+  const erreichbar = new Set([...(d.erreichbar["llama.cpp"] || []), ...(d.erreichbar.ollama || [])]);
+  document.getElementById("t-modelle").innerHTML =
+    `<tr><th>Modell</th><th>Runtime</th><th>Offload</th><th class="zahl">Sweep tok/s</th><th>Erreichbar</th></tr>` +
+    d.konfiguriert.map(m =>
+      `<tr><td>${m.name}<br><code>${m.alias}</code></td><td>${m.runtime}</td>
+        <td><code>${m.offload || "—"}</code></td>
+        <td class="zahl">${m.sweep_gen_tps ? z(m.sweep_gen_tps, 2) : "—"}</td>
+        <td>${erreichbar.has(m.alias) ? "✓ ja" : "— nein"}</td></tr>`).join("");
+}
+
+/* --- Steuerung ----------------------------------------------------------- */
+
+document.querySelectorAll("[data-fenster]").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("[data-fenster]").forEach(x => x.setAttribute("aria-pressed", "false"));
+    b.setAttribute("aria-pressed", "true");
+    fenster = b.dataset.fenster;
+    holeVerlauf();
+  });
+});
+
+document.getElementById("b-tabelle").addEventListener("click", (e) => {
+  const an = document.getElementById("tabellenbereich").classList.toggle("sichtbar");
+  e.target.setAttribute("aria-pressed", String(an));
+  if (an) holeModelle();
+});
+
+aufbauen();
+holeJetzt(); holeVerlauf(); holeStatus();
+setInterval(holeJetzt, 1000);
+setInterval(holeVerlauf, 5000);
+setInterval(holeStatus, 5000);
+</script>
+</body>
+</html>
