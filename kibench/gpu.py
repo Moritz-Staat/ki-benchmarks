@@ -16,11 +16,26 @@ aus der auch der Task-Manager seine GPU-Spalte speist. Ueber `win32pdh` kostet
 eine Abfrage rund 0,03 ms - guenstiger als NVML selbst und weit unter dem, was
 ein `nvidia-smi`-Subprozess kosten wuerde.
 
-Bekannte Abweichung: die Summe ueber alle PDH-Instanzen liegt systematisch
-ueber `nvmlDeviceGetMemoryInfo().used`, weil PDH je physischer Engine zaehlt und
-gemeinsam genutzte Allokationen mehrfach auftauchen. Fuer die Gesamtbelegung ist
-deshalb **NVML** massgeblich; PDH dient nur der Zuordnung, welcher Prozess sich
-wie stark bewegt. Genau das ist die Frage, die Prompt B beantwortet haben will.
+Die Summe ueber alle PDH-Instanzen liegt systematisch **ueber**
+`nvmlDeviceGetMemoryInfo().used`, weil PDH je physischer Engine zaehlt und
+gemeinsam genutzte Allokationen mehrfach auftauchen. Gemessen: 4446 MiB PDH-Summe
+gegen 2099 MiB laut NVML, also gut der doppelte Wert.
+
+Beide Zahlen unveraendert nebeneinanderzustellen ergibt Unsinn - im ersten
+Entwurf lag der "Fremd-VRAM" ueber der Gesamtbelegung. Deshalb gilt hier:
+
+* **NVML bestimmt die Gesamtsumme.** Sie ist die einzige verlaessliche Zahl.
+* **PDH bestimmt nur die Aufteilung.** Die Rohwerte werden auf die NVML-Summe
+  normiert, jeder Gruppenwert ist also `NVML-Gesamt x PDH-Anteil`.
+
+Das Ergebnis ist eine **Zuordnung, keine Direktmessung** - der Anteil stimmt, die
+absolute Zahl je Prozess ist auf die reale Gesamtbelegung heruntergerechnet. Fuer
+die Frage, die Prompt B beantwortet haben will ("war die Maschine waehrend dieses
+Laufs ruhig?"), ist genau das die brauchbare Groesse: sie ist in echten MiB
+ausgedrueckt und durch die Kartenkapazitaet begrenzt.
+
+Der unnormierte Rohwert bleibt je Prozess als `mib_roh` erhalten, damit die
+Herkunft nachvollziehbar bleibt.
 """
 from __future__ import annotations
 
@@ -50,10 +65,14 @@ class GpuMessung:
     gpu_clock_mem_mhz: int | None = None
     gpu_power_w: float | None = None
 
+    # Auf die NVML-Gesamtsumme normiert, siehe Modulkopf.
     vram_llama_mib: int = 0
     vram_ollama_mib: int = 0
     vram_fremd_mib: int = 0
     prozesse: list[dict] = field(default_factory=list)
+    # Nachvollziehbarkeit der Normierung.
+    vram_roh_summe_mib: int = 0
+    zuordnung_faktor: float = 1.0
 
     # True, solange die PDH-Quelle Daten liefert. Faellt sie aus, sind die
     # drei Zuordnungsfelder oben 0 und duerfen nicht als "nichts los" gelesen werden.
@@ -170,14 +189,26 @@ class GpuMonitor:
         lebende = set(psutil.pids())
         self._namen = {p: n for p, n in self._namen.items() if p in lebende}
 
-        llama = ollama = fremd = 0
+        roh_summe = sum(je_pid.values()) // MIB
+        if roh_summe <= 0:
+            return
+
+        # PDH liefert nur die Aufteilung, NVML die Summe. Ohne NVML-Wert bleibt
+        # der Rohmassstab - dann ist die Zahl zwar zu gross, aber die einzige,
+        # die es gibt.
+        faktor = (m.vram_used_mib / roh_summe) if m.vram_used_mib else 1.0
+
+        llama = ollama = fremd = 0.0
         prozesse: list[dict] = []
         for pid, byte in sorted(je_pid.items(), key=lambda kv: kv[1], reverse=True):
-            mib = byte // MIB
-            if mib <= 0:
+            roh_mib = byte // MIB
+            if roh_mib <= 0:
                 continue
+            mib = roh_mib * faktor
             name = self._prozessname(pid)
-            prozesse.append({"pid": pid, "name": name, "mib": mib})
+            prozesse.append(
+                {"pid": pid, "name": name, "mib": round(mib), "mib_roh": roh_mib}
+            )
             if name == "llama-server.exe":
                 llama += mib
             elif name in EIGENE_PROZESSE:
@@ -185,9 +216,11 @@ class GpuMonitor:
             else:
                 fremd += mib
 
-        m.vram_llama_mib = llama
-        m.vram_ollama_mib = ollama
-        m.vram_fremd_mib = fremd
+        m.vram_llama_mib = round(llama)
+        m.vram_ollama_mib = round(ollama)
+        m.vram_fremd_mib = round(fremd)
+        m.vram_roh_summe_mib = roh_summe
+        m.zuordnung_faktor = round(faktor, 4)
         # Nur die groessten Verbraucher speichern - 58 Instanzen je Sekunde
         # waeren ueber Stunden mehr Text als Messwerte.
         m.prozesse = prozesse[:10]

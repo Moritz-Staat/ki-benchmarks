@@ -133,6 +133,14 @@ td.zahl, th.zahl { text-align: right; font-variant-numeric: tabular-nums; }
 .tabellenbereich { display: none; }
 .tabellenbereich.sichtbar { display: block; }
 
+.leer-hinweis {
+  position: absolute; inset: 0; display: none;
+  align-items: center; justify-content: center;
+  font-size: 12px; color: var(--ink-muted); pointer-events: none;
+}
+.leer-hinweis { display: none; }
+.leer-hinweis[style*="block"] { display: flex !important; }
+
 .laedt { opacity: 0.55; transition: opacity 120ms; }
 footer { margin-top: 26px; font-size: 12px; color: var(--ink-muted); }
 code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; }
@@ -220,8 +228,11 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
   </div>
   <div class="karte breit" style="margin-top:14px">
     <h2>VRAM je Prozess</h2>
-    <p class="unter">Quelle: Windows-Leistungsindikator <code>GPU Process Memory</code>.
-       NVML kann das auf dieser Karte nicht — siehe <code>kibench/gpu.py</code>.</p>
+    <p class="unter">Quelle: Windows-Leistungsindikator <code>GPU Process Memory</code> —
+       NVML kann das auf dieser Karte nicht, siehe <code>kibench/gpu.py</code>.
+       Die PDH-Rohwerte zählen geteilte Allokationen mehrfach und summieren sich auf
+       etwa das Doppelte der echten Belegung. Die Spalte <b>zugeordnet</b> ist deshalb
+       auf die NVML-Gesamtsumme normiert; <b>roh</b> zeigt den unveränderten Zählerwert.</p>
     <table id="t-prozesse"></table>
   </div>
   <div class="karte breit" style="margin-top:14px">
@@ -336,7 +347,22 @@ function baueDiagramm(elId, reihen, opts = {}) {
   };
   const u = new uPlot(conf, [[], ...reihen.map(() => [])], el);
   new ResizeObserver(() => u.setSize({ width: el.clientWidth, height: conf.height })).observe(el);
+
+  /* Leere Diagramme sollen "keine Daten" sagen statt einfach leer zu bleiben —
+     sonst ist nicht unterscheidbar, ob nichts gemessen wurde oder etwas kaputt ist. */
+  const hinweis = document.createElement("div");
+  hinweis.className = "leer-hinweis";
+  hinweis.textContent = opts.leerText || "keine Daten im Zeitraum";
+  el.style.position = "relative";
+  el.appendChild(hinweis);
+  u.leerHinweis = hinweis;
   return u;
+}
+
+function setzeDaten(u, daten) {
+  u.setData(daten);
+  const hatWerte = daten.slice(1).some(reihe => reihe.some(v => v !== null && v !== undefined));
+  u.leerHinweis.style.display = hatWerte ? "none" : "block";
 }
 
 /* --- Aufbau -------------------------------------------------------------- */
@@ -348,11 +374,14 @@ function aufbauen() {
     { label: "VRAM fremd",  farbe: FARBE.s3, einheit: "%", stellen: 1 },
   ], { hoehe: 230, yBereich: [0, 100], yLabel: "% der Kapazität" });
 
-  diagramme.gen    = baueDiagramm("d-gen",    [{ label: "Generierung", farbe: FARBE.s1, einheit: "tok/s", stellen: 2 }], { yLabel: "tok/s" });
-  diagramme.prompt = baueDiagramm("d-prompt", [{ label: "Prompt",      farbe: FARBE.s1, einheit: "tok/s", stellen: 0 }], { yLabel: "tok/s" });
-  diagramme.temp   = baueDiagramm("d-temp",   [{ label: "Temperatur",  farbe: FARBE.s1, einheit: "°C",    stellen: 0 }], { yLabel: "°C", schwelle: 83 });
+  diagramme.gen    = baueDiagramm("d-gen",    [{ label: "Generierung", farbe: FARBE.s1, einheit: "tok/s", stellen: 2 }], { yLabel: "tok/s", leerText: "kein llama-server im Zeitraum" });
+  diagramme.prompt = baueDiagramm("d-prompt", [{ label: "Prompt",      farbe: FARBE.s1, einheit: "tok/s", stellen: 0 }], { yLabel: "tok/s", leerText: "kein llama-server im Zeitraum" });
+  /* Feste Spanne: bei automatischer Skalierung spannt uPlot im Leerlauf über
+     einen einzigen Grad auf, dann sieht Messrauschen wie eine Klippe aus — und
+     die Schwellenlinie bei 83 °C läge außerhalb des Bildes. */
+  diagramme.temp   = baueDiagramm("d-temp",   [{ label: "Temperatur",  farbe: FARBE.s1, einheit: "°C",    stellen: 0 }], { yLabel: "°C", yBereich: [30, 90], schwelle: 83 });
   diagramme.takt   = baueDiagramm("d-takt",   [{ label: "SM-Takt",     farbe: FARBE.s1, einheit: "MHz",   stellen: 0 }], { yLabel: "MHz" });
-  diagramme.kv     = baueDiagramm("d-kv",     [{ label: "KV-Cache",    farbe: FARBE.s1, einheit: "%",     stellen: 1 }], { yLabel: "%", yBereich: [0, 100] });
+  diagramme.kv     = baueDiagramm("d-kv",     [{ label: "KV-Cache",    farbe: FARBE.s1, einheit: "%",     stellen: 1 }], { yLabel: "%", yBereich: [0, 100], leerText: "kein llama-server im Zeitraum" });
   diagramme.gpu    = baueDiagramm("d-gpu",    [{ label: "Auslastung",  farbe: FARBE.s1, einheit: "%",     stellen: 0 }], { yLabel: "%", yBereich: [0, 100] });
 }
 
@@ -371,16 +400,16 @@ async function holeVerlauf() {
 
   const alsProzent = (arr, gesamt) => arr.map(v => v === null ? null : (v / gesamt) * 100);
 
-  diagramme.speicher.setData([x,
+  setzeDaten(diagramme.speicher, [x,
     alsProzent(s.vram_used_mib, vramTotal),
     alsProzent(s.ram_used_gib, ramTotal),
     alsProzent(s.vram_fremd_mib, vramTotal)]);
-  diagramme.gen.setData([x, s.llama_gen_tps]);
-  diagramme.prompt.setData([x, s.llama_prompt_tps]);
-  diagramme.temp.setData([x, s.gpu_temp_c]);
-  diagramme.takt.setData([x, s.gpu_clock_sm_mhz]);
-  diagramme.kv.setData([x, s.llama_kv_cache_pct]);
-  diagramme.gpu.setData([x, s.gpu_util_pct]);
+  setzeDaten(diagramme.gen,    [x, s.llama_gen_tps]);
+  setzeDaten(diagramme.prompt, [x, s.llama_prompt_tps]);
+  setzeDaten(diagramme.temp,   [x, s.gpu_temp_c]);
+  setzeDaten(diagramme.takt,   [x, s.gpu_clock_sm_mhz]);
+  setzeDaten(diagramme.kv,     [x, s.llama_kv_cache_pct]);
+  setzeDaten(diagramme.gpu,    [x, s.gpu_util_pct]);
 
   document.getElementById("f-status").textContent =
     `${d.punkte} Punkte im Fenster „${d.fenster}“`;
@@ -413,7 +442,7 @@ async function holeJetzt() {
     kachel("Temperatur", z(s.gpu_temp_c, 0), "°C", `Takt ${z(s.gpu_clock_sm_mhz, 0)} MHz`, felder.has("temp")),
     kachel("Leistung", z(s.gpu_power_w, 0), "W", "GPU", false),
     kachel("Fremd-VRAM", z(s.vram_fremd_mib, 0), "MiB",
-           `Schwankung ${d.fremd_vram_schwankung_mib} MiB`, felder.has("fremd_vram")),
+           `Schwankung ${d.fremd_vram_schwankung_mib} MiB · zugeordnet`, felder.has("fremd_vram")),
   ].join("");
 
   document.getElementById("warnungen").innerHTML = d.warnungen.map(w =>
@@ -477,9 +506,11 @@ function fuelleTabellen(d) {
     ].join("");
 
   document.getElementById("t-prozesse").innerHTML =
-    `<tr><th>Prozess</th><th class="zahl">PID</th><th class="zahl">VRAM (MiB)</th></tr>` +
+    `<tr><th>Prozess</th><th class="zahl">PID</th><th class="zahl">zugeordnet (MiB)</th>`
+    + `<th class="zahl">roh (MiB)</th></tr>` +
     (s.vram_prozesse || []).map(p =>
-      `<tr><td>${p.name}</td><td class="zahl">${p.pid}</td><td class="zahl">${p.mib}</td></tr>`).join("");
+      `<tr><td>${p.name}</td><td class="zahl">${p.pid}</td>`
+      + `<td class="zahl">${p.mib}</td><td class="zahl">${p.mib_roh ?? "—"}</td></tr>`).join("");
 }
 
 async function holeModelle() {

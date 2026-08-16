@@ -54,6 +54,9 @@ class AntwortMessung:
     prompt_tokens: int | None = None
     antwort_tokens: int | None = None
     denk_tokens: int | None = None
+    # True, wenn die Denk-Token aus der Textlaenge geschaetzt wurden, weil die
+    # Runtime `completion_tokens_details.reasoning_tokens` nicht liefert.
+    denk_tokens_geschaetzt: bool = False
     gesamt_tokens: int | None = None
 
     dauer_s: float | None = None
@@ -180,17 +183,22 @@ class ModellAdapter:
         m.gesamt_tokens = nutzung.get("total_tokens")
         gesamt_antwort = nutzung.get("completion_tokens")
 
-        # Denk-Token von Antwort-Token trennen. Manche Builds liefern das in
-        # completion_tokens_details, sonst wird es geschaetzt - und dann auch
-        # als Schaetzung benannt, nicht als Messwert ausgegeben.
+        # Denk-Token von Antwort-Token trennen. Manche Builds liefern die Zahl in
+        # completion_tokens_details; sonst bleibt nur eine Schaetzung aus der
+        # Textlaenge, und die ist als solche markiert.
         details = nutzung.get("completion_tokens_details") or {}
         m.denk_tokens = details.get("reasoning_tokens")
         if m.denk_tokens is None and m.denktext:
-            m.denk_tokens = max(1, round(len(m.denktext) / 3.6))
+            geschaetzt = max(1, round(len(m.denktext) / 3.6))
+            # Die Schaetzung kann die tatsaechliche Zahl uebersteigen - gemessen
+            # bei qwen-moe: 190 geschaetzt gegen 187 wirklich, was ohne Deckel
+            # zu -3 Antwort-Token fuehrte. Der Deckel ist Pflicht, nicht Kosmetik:
+            # negative Tokenzahlen wuerden in Prompt C stillschweigend in die
+            # Auswertung wandern.
+            m.denk_tokens = min(geschaetzt, gesamt_antwort) if gesamt_antwort else geschaetzt
+            m.denk_tokens_geschaetzt = True
         if gesamt_antwort is not None:
-            m.antwort_tokens = (
-                gesamt_antwort - m.denk_tokens if m.denk_tokens else gesamt_antwort
-            )
+            m.antwort_tokens = max(0, gesamt_antwort - (m.denk_tokens or 0))
             if m.dauer_s and m.dauer_s > 0:
                 m.gen_tps = round(gesamt_antwort / m.dauer_s, 2)
 
@@ -257,6 +265,7 @@ class ModellAdapter:
 
         nachher = self._vram_used()
         return {
+            "war_geladen": geladen,
             "entladen": entladen,
             "noch_geladen": rest_geladen,
             "vram_vorher_mib": vorher,
@@ -264,7 +273,29 @@ class ModellAdapter:
             "freigegeben_mib": (vorher - nachher) if (vorher and nachher) else None,
             # Der eigentliche Nachweis, nicht die Bestaetigung der Anfrage.
             "bestaetigt": not rest_geladen,
+            # Ohne dieses Feld liest sich "bestaetigt: true" wie ein Nachweis,
+            # obwohl gar nichts geladen war - mit OLLAMA_KEEP_ALIVE=0 der
+            # Normalfall. Ein Aufruf ohne geladenes Modell beweist nichts.
+            "aussagekraeftig": bool(geladen),
         }
+
+    def modell_festhalten(self, alias: str, keep_alive: str = "120s") -> dict:
+        """Ollama-Modell laden und im VRAM halten - nur zum Pruefen von `entladen()`.
+
+        Im Betrieb ist `OLLAMA_KEEP_ALIVE=0` gesetzt, damit Ollama den Speicher
+        fuer llama-server frei macht. Genau deshalb laesst sich die Freigabe
+        sonst nicht pruefen: es ist nie etwas zu entladen da.
+        """
+        try:
+            self._client.post(
+                f"{self.ollama_base}/api/generate",
+                json={"model": alias, "prompt": "Hi", "stream": False, "keep_alive": keep_alive},
+                timeout=600.0,
+            )
+        except Exception as e:
+            return {"ok": False, "fehler": f"{type(e).__name__}: {e}"}
+        time.sleep(1.0)
+        return {"ok": True, "vram_mib": self._vram_used()}
 
     def _vram_used(self) -> int | None:
         if self._gpu is None:

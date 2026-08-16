@@ -48,6 +48,10 @@ class Sampler:
         self.intervall_s = intervall_s
         self._db_pfad = db_pfad
         self._stop = threading.Event()
+        # Wird gesetzt, sobald Datenbank und Messquellen offen sind. start()
+        # wartet darauf, sonst greift der Aufrufer auf ein halb aufgebautes
+        # Objekt zu - die API holt sich direkt nach start() den GpuMonitor.
+        self._bereit = threading.Event()
         self._thread: threading.Thread | None = None
         self.status = SamplerStatus()
 
@@ -62,17 +66,27 @@ class Sampler:
 
     # --- Steuerung ----------------------------------------------------------
 
-    def start(self) -> None:
+    def start(self, warten_s: float = 10.0) -> bool:
+        """Startet den Sampler und wartet, bis er wirklich misst.
+
+        Gibt zurueck, ob er rechtzeitig hochkam. Ein `start()`, das vor der
+        Initialisierung zurueckkehrt, wuerde falsche Zusagen machen: der
+        Statusendpunkt meldete "laeuft nicht", und die API haette sich einen
+        GpuMonitor geholt, den es noch gar nicht gibt.
+        """
         if self._thread and self._thread.is_alive():
-            return
+            return True
         self._stop.clear()
+        self._bereit.clear()
         self._thread = threading.Thread(target=self._schleife, name="sampler", daemon=True)
         self._thread.start()
+        return self._bereit.wait(timeout=warten_s)
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=timeout)
+        self._bereit.clear()
         self.status.laeuft = False
 
     # --- Kennzahl fuer die Live-Ansicht -------------------------------------
@@ -100,6 +114,8 @@ class Sampler:
         self.status.laeuft = True
         self.status.gestartet_ts = time.time()
         naechster = time.monotonic()
+        # Ab hier sind Datenbank und alle Messquellen offen.
+        self._bereit.set()
 
         try:
             while not self._stop.is_set():

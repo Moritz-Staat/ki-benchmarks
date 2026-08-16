@@ -41,9 +41,12 @@ adapter: ModellAdapter | None = None
 async def lebenszyklus(app: FastAPI):
     global adapter
     db.init_db()
-    sampler.start()
+    if not sampler.start():
+        # Nicht still weiterlaufen: ohne Sampler zeigt die Seite alte Daten an,
+        # ohne dass es auffiele.
+        raise RuntimeError("Sampler kam nicht hoch - siehe /api/status")
     # Der Adapter teilt sich den GPU-Monitor des Samplers, damit nicht zwei
-    # NVML-Handles offen sind.
+    # NVML-Handles offen sind. Erst nach start() abgreifen - vorher ist er None.
     adapter = ModellAdapter(gpu_monitor=sampler._gpu)
     try:
         yield
@@ -289,6 +292,7 @@ def anfrage(eingabe: AnfrageEingabe) -> dict:
         "finish_reason": m.finish_reason,
         "prompt_tokens": m.prompt_tokens,
         "denk_tokens": m.denk_tokens,
+        "denk_tokens_geschaetzt": m.denk_tokens_geschaetzt,
         "antwort_tokens": m.antwort_tokens,
         "dauer_s": m.dauer_s,
         "gen_tps": m.gen_tps,
@@ -301,6 +305,18 @@ def entladen(modell: str | None = None) -> dict:
     if adapter is None:
         raise HTTPException(status_code=503, detail="Adapter nicht bereit")
     return adapter.entladen(modell)
+
+
+@app.post("/api/festhalten")
+def festhalten(modell: str) -> dict:
+    """Ollama-Modell im VRAM halten - ausschliesslich, um `/api/entladen` zu pruefen.
+
+    Mit `OLLAMA_KEEP_ALIVE=0` ist sonst nie etwas geladen, und die Freigabe
+    liesse sich nicht nachweisen.
+    """
+    if adapter is None:
+        raise HTTPException(status_code=503, detail="Adapter nicht bereit")
+    return adapter.modell_festhalten(modell)
 
 
 # ---------------------------------------------------------------------------
