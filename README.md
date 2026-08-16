@@ -7,7 +7,25 @@ ermittelten Offload-Werte, Ports und Modellnamen.
 
 **Prompt B, Teil 1-4 gebaut, Abnahme noch offen.** Details in `..\FORTSETZEN-B.md`.
 
+## Einrichten
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Alles laeuft im venv des Repos, **nichts systemweit**. `pywin32` wird nur unter Windows
+gebraucht und liefert `win32pdh` fuer den VRAM je Prozess.
+
 ## Starten
+
+Doppelklick auf die Desktop-Verknuepfung **KI-Dashboard**, anzulegen mit:
+
+```powershell
+.\tools\verknuepfung-anlegen.ps1     # -Entfernen macht es rueckgaengig
+```
+
+Oder von Hand:
 
 ```powershell
 .\.venv\Scripts\python.exe dashboard.py

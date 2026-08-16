@@ -1,0 +1,25 @@
+# Direkte Abhaengigkeiten, Versionen wie am 16.08.2026 installiert.
+# Bewusst kein vollstaendiger pip freeze: transitive Pakete soll pip aufloesen,
+# festgenagelt wird nur, was hier auch wirklich importiert wird.
+#
+#   python -m venv .venv
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# Alles laeuft im venv des Repos - nichts systemweit installieren.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+
+# Hardware-Messung
+psutil==7.2.2
+nvidia-ml-py==13.610.43     # liefert das Modul `pynvml`, passend zu Treiber 610.88
+
+# Windows-Leistungsindikatoren: liefert `win32pdh` fuer den VRAM je Prozess.
+# NVML kann das auf GeForce-Karten unter Windows nicht - siehe kibench/gpu.py.
+pywin32==312 ; sys_platform == "win32"
+
+# HTTP gegen llama-server und Ollama
+httpx==0.28.1
+
+# Tests
+pytest==9.1.1
