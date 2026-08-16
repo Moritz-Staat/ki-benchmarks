@@ -23,16 +23,29 @@ BASIS = "http://127.0.0.1:8420"
 
 
 def dashboard_prozess() -> psutil.Process | None:
-    """Der Python-Prozess, der dashboard.py ausfuehrt."""
+    """Der Python-Prozess, der dashboard.py wirklich ausfuehrt.
+
+    Achtung, hier lag ein Fehler: ein venv startet unter Windows **zwei**
+    Prozesse mit derselben Kommandozeile - einen schlanken Starter-Stub
+    (rund 4,5 MiB, ein Thread) und den eigentlichen Interpreter. Wer den ersten
+    Treffer nimmt, beobachtet den Stub, dessen Speicherbedarf naturgemaess
+    konstant bleibt. Ein Speicherleck im Sampler waere damit unsichtbar - der
+    Dauerlauf haette "bestanden" gemeldet, ohne irgendetwas zu pruefen.
+
+    Deshalb: unter allen Treffern den mit dem groessten Arbeitsspeicher nehmen.
+    """
+    treffer: list[psutil.Process] = []
     for p in psutil.process_iter(["name", "cmdline"]):
         try:
-            if p.info["name"] not in ("python.exe", "python"):
+            if p.info["name"] not in ("python.exe", "python", "pythonw.exe"):
                 continue
             if any("dashboard.py" in teil for teil in (p.info["cmdline"] or [])):
-                return p
+                treffer.append(p)
         except Exception:
             continue
-    return None
+    if not treffer:
+        return None
+    return max(treffer, key=lambda q: q.memory_info().rss)
 
 
 def main() -> int:
