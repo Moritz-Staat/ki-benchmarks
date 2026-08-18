@@ -32,10 +32,13 @@ MODELLE = [
         "name": "Qwen3.8-27B dense Q5",
         "runtime": "llama.cpp",
         "quant": "UD-Q5_K_XL",
-        "offload": "-ngl 40",
-        # Sweep-Werte aus SETUP.md, Basis fuer die tok/s-Warnschwelle
-        "sweep_gen_tps": 5.43,
-        "sweep_prompt_tps": 390.2,
+        "offload": "-ngl 46",
+        # Sweep-Werte aus SETUP.md, Basis fuer die tok/s-Warnschwelle.
+        # Aus dem Wiederholungs-Sweep vom 18.08.2026, nicht aus Prompt A: der
+        # erste Lauf mass mit aktivem Sysmem-Fallback und lieferte fuer -ngl 42
+        # aufwaerts Zahlen, die den Treiber beschreiben und nicht das Modell.
+        "sweep_gen_tps": 7.34,
+        "sweep_prompt_tps": 608.3,
     },
     {
         "alias": "qwen-moe",
