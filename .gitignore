@@ -39,3 +39,8 @@ logs/
 Thumbs.db
 .idea/
 .vscode/
+
+# Arbeitsverzeichnisse des Benchmark-Runners. Enthalten modellgenerierten Code
+# und werden nach einem erfolgreichen Durchgang ohnehin verworfen; liegen
+# bleiben nur Fehlschlaege, damit man sie noch ansehen kann.
+runs/

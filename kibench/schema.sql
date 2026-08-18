@@ -89,7 +89,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     werkzeuge_json  TEXT,                       -- Tool-Definitionen fuer diese Aufgabe
     max_tokens      INTEGER,
     quelle          TEXT,                       -- z.B. 'NOTIZEN.md'
-    aktiv           INTEGER NOT NULL DEFAULT 1
+    aktiv           INTEGER NOT NULL DEFAULT 1,
+
+    -- Ab Prompt C ergaenzt. Prompt B hat das Schema bewusst vollstaendig
+    -- angelegt, um Migrationen zu vermeiden - diese beiden Felder verlangt
+    -- aber erst Prompt C ("gestaffelte Schwierigkeit einplanen", "erwartete
+    -- Schrittzahl"). Die Tabelle war zu dem Zeitpunkt noch leer, das Nachziehen
+    -- kostet also nichts.
+    schwierigkeit       TEXT,                   -- 'leicht' | 'mittel' | 'schwer'
+    erwartete_schritte  INTEGER,
+    timeout_s           REAL
 );
 
 -- ---------------------------------------------------------------------------
@@ -124,7 +133,20 @@ CREATE TABLE IF NOT EXISTS results (
     -- Kontext der Maschine waehrend des Laufs, aus samples aggregiert
     vram_max_mib        INTEGER,
     vram_fremd_max_mib  INTEGER,
-    maschine_ruhig      INTEGER                 -- Fremd-VRAM-Schwankung unter der Schwelle?
+    maschine_ruhig      INTEGER,                -- Fremd-VRAM-Schwankung unter der Schwelle?
+
+    -- Ab Prompt C ergaenzt.
+    schritte            INTEGER,                -- wie viele Werkzeugschritte bis zum Ende
+    rechenzeit_s        REAL,                   -- Summe der vom Server gemeldeten Zeiten
+    nachladen_s         REAL,                   -- Wanduhr minus Rechenzeit
+    -- Der wichtigste Befund aus Prompt B als Datenfeld: laedt der Treiber
+    -- waehrend des Laufs Gewichte aus dem Hauptspeicher nach, meldet der Server
+    -- weiter gesunde tok/s, waehrend der Anrufer wartet. Ein Lauf mit mehr als
+    -- einer Sekunde Nachladeanteil ist kein gueltiger Messpunkt - er bleibt in
+    -- der Tabelle, wird aber nicht mitgemittelt.
+    messpunkt_gueltig   INTEGER NOT NULL DEFAULT 1,
+    timeout             INTEGER NOT NULL DEFAULT 0,
+    sandbox_verstoesse  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_results_run  ON results(run_id);

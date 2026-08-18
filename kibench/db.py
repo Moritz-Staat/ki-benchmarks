@@ -36,12 +36,48 @@ def verbindung(pfad: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+# Spalten, die nach dem ersten Anlegen einer Datenbank dazugekommen sind.
+# `CREATE TABLE IF NOT EXISTS` ruehrt eine vorhandene Tabelle nicht an - eine
+# Datenbank, die seit Prompt B laeuft, bekaeme die neuen Felder also nie zu
+# sehen und wuerde beim ersten Schreiben mit "no such column" abbrechen.
+_NACHRUESTEN = {
+    "tasks": {
+        "schwierigkeit": "TEXT",
+        "erwartete_schritte": "INTEGER",
+        "timeout_s": "REAL",
+    },
+    "results": {
+        "schritte": "INTEGER",
+        "rechenzeit_s": "REAL",
+        "nachladen_s": "REAL",
+        "messpunkt_gueltig": "INTEGER NOT NULL DEFAULT 1",
+        "timeout": "INTEGER NOT NULL DEFAULT 0",
+        "sandbox_verstoesse": "TEXT",
+    },
+}
+
+
+def _spalten_nachruesten(conn: sqlite3.Connection) -> list[str]:
+    """Fehlende Spalten ergaenzen. Gibt zurueck, was ergaenzt wurde."""
+    ergaenzt: list[str] = []
+    for tabelle, spalten_soll in _NACHRUESTEN.items():
+        vorhanden = set(spalten(conn, tabelle))
+        if not vorhanden:
+            continue
+        for name, typ in spalten_soll.items():
+            if name not in vorhanden:
+                conn.execute(f"ALTER TABLE {tabelle} ADD COLUMN {name} {typ}")
+                ergaenzt.append(f"{tabelle}.{name}")
+    return ergaenzt
+
+
 def init_db(pfad: Path | None = None) -> sqlite3.Connection:
     """Legt das Schema an. Idempotent - laeuft bei jedem Start."""
     pfad = pfad or DB_PATH
     pfad.parent.mkdir(parents=True, exist_ok=True)
     conn = verbindung(pfad)
     conn.executescript(_SCHEMA_SQL.read_text(encoding="utf-8"))
+    _spalten_nachruesten(conn)
     conn.execute(
         "INSERT INTO meta(schluessel, wert) VALUES('schema_version', ?) "
         "ON CONFLICT(schluessel) DO UPDATE SET wert = excluded.wert",

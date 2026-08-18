@@ -99,15 +99,33 @@ def test_verlauf_deckelt_die_punktzahl(client):
     assert d["punkte"] <= 60
 
 
-def test_modelle_listet_alle_fuenf(client):
+def test_modelle_listet_alle_sechs_konfigurationen(client):
+    """Fuenf Modelle, sechs Konfigurationen - dense laeuft in zwei Quantisierungen.
+
+    Der Test hiess bis Prompt C `..._alle_fuenf` und pruefte `len == 5`. Mit der
+    sechsten Konfiguration musste die Zusicherung mitwandern; ein Test, dessen
+    Name eine andere Zahl behauptet als sein Rumpf, ist schlimmer als keiner.
+    """
     d = client.get("/api/modelle").json()
     aliase = [m["alias"] for m in d["konfiguriert"]]
-    assert len(aliase) == 5
+    assert len(aliase) == 6
     assert "qwen-dense" in aliase and "qwen-moe" in aliase
+    assert "qwen-dense-iq4" in aliase
     assert "llama3.2:3b" in aliase
     # Die Sweep-Werte aus SETUP.md sind die Grundlage der tok/s-Warnschwelle.
     moe = next(m for m in d["konfiguriert"] if m["alias"] == "qwen-moe")
     assert moe["sweep_gen_tps"] == 64.40
+    iq4 = next(m for m in d["konfiguriert"] if m["alias"] == "qwen-dense-iq4")
+    assert iq4["quant"] == "IQ4_XS" and iq4["offload"] == "-ngl 58"
+
+
+def test_llama_konfigurationen_haben_ein_wechselziel(client):
+    """Ohne `wechsel_ziel` kann der Runner den Server nicht selbst umschalten -
+    und der Probelauf ueber alle sechs Konfigurationen braucht genau das."""
+    d = client.get("/api/modelle").json()
+    for m in d["konfiguriert"]:
+        if m["runtime"] == "llama.cpp":
+            assert m.get("wechsel_ziel"), f"{m['alias']} hat kein Wechselziel"
 
 
 def test_seite_wird_ausgeliefert(client):

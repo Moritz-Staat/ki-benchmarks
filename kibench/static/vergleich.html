@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ki-benchmarks — Vergleich</title>
+<style>
+/* Gleiche Palette wie die Live-Ansicht - die beiden Seiten gehoeren zusammen. */
+:root {
+  color-scheme: dark;
+  --plane: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+  --ink-muted: #898781; --grid: #2c2c2a; --axis: #383835;
+  --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 24px 48px; background: var(--plane); color: var(--ink);
+       font-family: var(--font); font-size: 14px; line-height: 1.5; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 13px; font-weight: 600; margin: 24px 0 2px; }
+.unter { font-size: 12px; color: var(--ink-muted); margin: 0 0 12px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+         padding-bottom: 14px; margin-bottom: 4px; border-bottom: 1px solid var(--axis); }
+a { color: var(--s1); text-decoration: none; }
+a:hover { text-decoration: underline; }
+nav { margin-left: auto; display: flex; gap: 14px; font-size: 12px; }
+
+.karte { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+         padding: 14px 16px; margin-top: 12px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; padding: 0 10px 8px 0;
+     border-bottom: 1px solid var(--axis); white-space: nowrap; }
+td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+td.zahl, th.zahl { text-align: right; }
+tr:last-child td { border-bottom: 0; }
+.gering { color: var(--ink-muted); }
+
+/* Balken statt nackter Prozentzahl: eine Erfolgsquote liest sich als Laenge
+   schneller als als Ziffer, und die Streuung wird sichtbar mitgezeichnet. */
+.balken { position: relative; height: 16px; width: 130px; background: var(--grid);
+          border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; }
+.balken > i { position: absolute; inset: 0 auto 0 0; background: var(--s3); display: block; }
+.balken > b { position: absolute; inset: 0; font-size: 11px; font-weight: 500;
+              text-align: center; line-height: 16px; color: var(--ink); }
+
+.streu { display: inline-flex; gap: 2px; align-items: center; }
+.streu span { display: inline-block; height: 14px; border-radius: 2px; min-width: 3px; }
+.st-immer { background: var(--good); }
+.st-manchmal { background: var(--warning); }
+.st-nie { background: var(--critical); }
+
+.marke { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+         border: 1px solid var(--ring); color: var(--ink-2); }
+.warn { color: var(--warning); }
+.schlecht { color: var(--critical); }
+.hinweis { border-left: 2px solid var(--warning); padding: 8px 12px; margin-top: 12px;
+           background: rgba(250,178,25,0.07); font-size: 13px; }
+.leer { color: var(--ink-muted); padding: 24px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Vergleich</h1>
+  <span class="marke" id="anzahl">–</span>
+  <nav>
+    <a href="/">Live-Ansicht</a>
+    <a href="#aufgaben">Aufgaben</a>
+  </nav>
+</header>
+<p class="unter">Erfolgsquote, Tempo und Werkzeugtreue je Konfiguration. Getrennt nach
+Thinking-Modus, weil das zwei Betriebsarten desselben Modells sind.</p>
+
+<div id="inhalt"></div>
+
+<script>
+const proz = (x) => x === null || x === undefined ? "–" : (x * 100).toFixed(0) + " %";
+const esc  = (s) => String(s ?? "").replace(/[&<>"]/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function balken(quote) {
+  if (quote === null || quote === undefined) return '<span class="gering">–</span>';
+  return `<span class="balken"><i style="width:${(quote*100).toFixed(1)}%"></i>`
+       + `<b>${proz(quote)}</b></span>`;
+}
+
+// Immer / manchmal / nie geloest. Die mittlere Gruppe ist der Grund, warum hier
+// nicht nur ein Mittelwert steht: drei schwankende Durchgaenge sehen gemittelt
+// aus wie ein verlaesslicher Wert.
+function streuung(k) {
+  const g = k.aufgaben_immer + k.aufgaben_manchmal + k.aufgaben_nie;
+  if (!g) return '<span class="gering">–</span>';
+  const br = (n) => `${(n / g * 100).toFixed(1)}%`;
+  return `<span class="streu" title="${k.aufgaben_immer} immer, `
+       + `${k.aufgaben_manchmal} manchmal, ${k.aufgaben_nie} nie geloest">`
+       + `<span class="st-immer" style="width:${br(k.aufgaben_immer)}"></span>`
+       + `<span class="st-manchmal" style="width:${br(k.aufgaben_manchmal)}"></span>`
+       + `<span class="st-nie" style="width:${br(k.aufgaben_nie)}"></span></span> `
+       + `<span class="gering">${k.aufgaben_immer}/${k.aufgaben_manchmal}/${k.aufgaben_nie}</span>`;
+}
+
+function spanne(werte, einheit) {
+  if (!werte) return "";
+  return `<span class="gering"> (${werte[0]}–${werte[1]}${einheit})</span>`;
+}
+
+function konfigTabelle(ks) {
+  const stufen = [...new Set(ks.flatMap(k => Object.keys(k.je_schwierigkeit)))].sort();
+  const kopf = ["Konfiguration", "Erfolg", "immer/manchmal/nie",
+                ...stufen, "tok/s", "Dauer", "Tool-Calls", "Schritte", "verworfen"];
+  const zeilen = ks.map(k => {
+    const name = esc(k.alias) + (k.thinking ? "" : ' <span class="gering">ohne Denken</span>');
+    const stufenZellen = stufen.map(s => {
+      const e = k.je_schwierigkeit[s];
+      return `<td class="zahl">${e ? proz(e.quote) : '<span class="gering">–</span>'}</td>`;
+    }).join("");
+    const verworfen = k.messpunkte_verworfen
+      ? `<td class="zahl warn">${k.messpunkte_verworfen}</td>` : `<td class="zahl gering">0</td>`;
+    return `<tr>
+      <td>${name}<div class="gering" style="font-size:11px">${esc(k.quant ?? "")}</div></td>
+      <td>${balken(k.erfolgsquote)}</td>
+      <td>${streuung(k)}</td>
+      ${stufenZellen}
+      <td class="zahl">${k.gen_tps_median ?? "–"}${spanne(k.gen_tps_spanne, "")}</td>
+      <td class="zahl">${k.dauer_median_s ? k.dauer_median_s + " s" : "–"}</td>
+      <td class="zahl">${proz(k.tool_call_quote)}
+        <span class="gering">${k.tool_calls_korrekt}/${k.tool_calls_erhalten}</span></td>
+      <td class="zahl">${k.schritte_median ?? "–"}</td>
+      ${verworfen}
+    </tr>`;
+  }).join("");
+  return `<div class="karte"><table><thead><tr>
+    ${kopf.map(h => `<th class="${["Konfiguration","immer/manchmal/nie","Erfolg"].includes(h) ? "" : "zahl"}">${esc(h)}</th>`).join("")}
+  </tr></thead><tbody>${zeilen}</tbody></table></div>`;
+}
+
+function aufgabenTabelle(aufgaben) {
+  if (!aufgaben.length) return "";
+  const zeilen = aufgaben.map(a => {
+    const marke = a.trennt
+      ? '<span class="marke" style="color:var(--good)">trennt</span>'
+      : '<span class="marke warn">trennt nicht</span>';
+    return `<tr>
+      <td>${esc(a.titel)}<div class="gering" style="font-size:11px">${esc(a.schluessel)}</div></td>
+      <td>${esc(a.kategorie)}</td>
+      <td>${esc(a.schwierigkeit)}</td>
+      <td class="zahl">${proz(a.quote_min)}</td>
+      <td class="zahl">${proz(a.quote_max)}</td>
+      <td>${marke}</td>
+    </tr>`;
+  }).join("");
+  return `<h2 id="aufgaben">Je Aufgabe</h2>
+    <p class="unter">Eine Aufgabe, die alle loesen oder keiner loest, traegt zum Vergleich
+    nichts bei. Prompt C macht daraus eine Abnahmebedingung.</p>
+    <div class="karte"><table><thead><tr>
+      <th>Aufgabe</th><th>Kategorie</th><th>Schwierigkeit</th>
+      <th class="zahl">schlechteste</th><th class="zahl">beste</th><th>Befund</th>
+    </tr></thead><tbody>${zeilen}</tbody></table></div>`;
+}
+
+async function laden() {
+  const d = await (await fetch("/api/vergleich")).json();
+  const ziel = document.getElementById("inhalt");
+  document.getElementById("anzahl").textContent = d.gesamt_ergebnisse + " Ergebnisse";
+
+  if (!d.konfigurationen.length) {
+    ziel.innerHTML = '<p class="leer">Noch keine Ergebnisse. '
+      + 'Erster Lauf: <code>python bench.py run --modell alle --suite rauchtest</code></p>';
+    return;
+  }
+
+  let html = konfigTabelle(d.konfigurationen);
+
+  const verworfen = d.konfigurationen.reduce((s, k) => s + k.messpunkte_verworfen, 0);
+  if (verworfen) {
+    html += `<div class="hinweis"><b>${verworfen} Messpunkte verworfen.</b> In diesen Laeufen
+      lag zwischen gewarteter und gerechneter Zeit mehr als eine Sekunde — der Treiber hat
+      Gewichte aus dem Hauptspeicher nachgeladen. Die Erfolgsquote zaehlt sie mit, die
+      Tempowerte nicht.</div>`;
+  }
+  const ausbrueche = d.konfigurationen.reduce((s, k) => s + k.sandbox_verstoesse, 0);
+  if (ausbrueche) {
+    html += `<div class="hinweis"><b>${ausbrueche} abgewehrte Ausbruchsversuche.</b>
+      Generierter Code wollte aus dem Arbeitsverzeichnis heraus. Abgefangen — aber
+      ansehenswert im Protokoll.</div>`;
+  }
+  const trennend = d.aufgaben.filter(a => a.trennt).length;
+  if (d.aufgaben.length && !trennend) {
+    html += `<div class="hinweis"><b>Keine einzige Aufgabe differenziert.</b> Alle
+      Konfigurationen schneiden ueberall gleich ab. Dann ist nicht die Hardware das Problem,
+      sondern die Aufgabensammlung — siehe Abnahme in Prompt C.</div>`;
+  }
+
+  html += aufgabenTabelle(d.aufgaben);
+  ziel.innerHTML = html;
+}
+
+laden();
+setInterval(laden, 30000);
+</script>
+</body>
+</html>

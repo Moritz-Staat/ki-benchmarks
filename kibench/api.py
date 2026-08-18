@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import db
+from . import auswertung, db
 from .adapter import ModellAdapter
 from .config import (
     MODELLE,
@@ -320,12 +320,53 @@ def festhalten(modell: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Auswertung (Prompt C)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/laeufe")
+def laeufe(limit: int = Query(default=100, ge=1, le=1000)) -> dict:
+    """Alle Benchmark-Laeufe, neueste zuerst."""
+    return {"laeufe": auswertung.laeufe(db.verbindung(), limit)}
+
+
+@app.get("/api/vergleich")
+def vergleich(suite: str | None = None) -> dict:
+    """Alle Konfigurationen nebeneinander - mit Streuung, nicht nur Mittelwert."""
+    return auswertung.vergleich(db.verbindung(), suite=suite)
+
+
+@app.get("/api/lauf/{run_id}")
+def lauf(run_id: int) -> dict:
+    """Ein Lauf mit Ergebnissen und der Hardwarekurve aus demselben Zeitraum."""
+    d = auswertung.lauf_detail(db.verbindung(), run_id)
+    if not d:
+        raise HTTPException(status_code=404, detail=f"Lauf {run_id} nicht gefunden")
+    return d
+
+
+@app.get("/api/lauf/{run_id}/protokoll")
+def lauf_protokoll(run_id: int, limit: int = Query(default=200, ge=1, le=2000)) -> dict:
+    return {"eintraege": auswertung.protokoll(db.verbindung(), run_id, limit)}
+
+
+# ---------------------------------------------------------------------------
 # Live-Seite
 # ---------------------------------------------------------------------------
 
 @app.get("/")
 def seite() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/vergleich")
+def seite_vergleich() -> FileResponse:
+    return FileResponse(STATIC_DIR / "vergleich.html")
+
+
+@app.get("/lauf")
+def seite_lauf() -> FileResponse:
+    """Einzellauf: Protokoll und Hardwarekurve nebeneinander, per ?id=<run_id>."""
+    return FileResponse(STATIC_DIR / "lauf.html")
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

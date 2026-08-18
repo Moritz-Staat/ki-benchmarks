@@ -24,7 +24,16 @@ OLLAMA_BASE = "http://127.0.0.1:11434"
 HOST = "127.0.0.1"
 PORT = 8420
 
-# --- Die fuenf Modelle ------------------------------------------------------
+# --- Die sechs Konfigurationen ----------------------------------------------
+#
+# Fuenf Modelle, aber sechs Konfigurationen: das dense Modell laeuft in zwei
+# Quantisierungen, und der Unterschied ist zu gross, um eine davon wegzulassen -
+# IQ4_XS ist 2,5-mal schneller als Q5 (18,38 gegen 7,34 tok/s), aber ob die
+# Antwortqualitaet mithaelt, ist ungemessen. Genau das beantwortet Prompt C.
+#
+# `wechsel_ziel` ist das Argument fuer scripts\modell-wechsel.ps1. Nur die
+# llama.cpp-Konfigurationen brauchen es; die drei Ollama-Modelle laedt Ollama
+# bei Bedarf selbst.
 
 MODELLE = [
     {
@@ -33,6 +42,7 @@ MODELLE = [
         "runtime": "llama.cpp",
         "quant": "UD-Q5_K_XL",
         "offload": "-ngl 46",
+        "wechsel_ziel": "dense",
         # Sweep-Werte aus SETUP.md, Basis fuer die tok/s-Warnschwelle.
         # Aus dem Wiederholungs-Sweep vom 18.08.2026, nicht aus Prompt A: der
         # erste Lauf mass mit aktivem Sysmem-Fallback und lieferte fuer -ngl 42
@@ -41,11 +51,23 @@ MODELLE = [
         "sweep_prompt_tps": 608.3,
     },
     {
+        "alias": "qwen-dense-iq4",
+        "name": "Qwen3.8-27B dense IQ4_XS",
+        "runtime": "llama.cpp",
+        "quant": "IQ4_XS",
+        "offload": "-ngl 58",
+        "wechsel_ziel": "dense-iq4",
+        # Wiederholungs-Sweep 18.08.2026, wanduhrgeprueft.
+        "sweep_gen_tps": 18.38,
+        "sweep_prompt_tps": 1037.6,
+    },
+    {
         "alias": "qwen-moe",
         "name": "Qwen3.6-35B-A3B MoE Q4",
         "runtime": "llama.cpp",
         "quant": "UD-Q4_K_XL",
         "offload": "-ngl 99 --n-cpu-moe 20",
+        "wechsel_ziel": "moe",
         "sweep_gen_tps": 64.40,
         "sweep_prompt_tps": 377.3,
     },

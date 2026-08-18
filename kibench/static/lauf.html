@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ki-benchmarks — Einzellauf</title>
+<link rel="stylesheet" href="/static/vendor/uPlot.min.css">
+<style>
+:root {
+  color-scheme: dark;
+  --plane: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+  --ink-muted: #898781; --grid: #2c2c2a; --axis: #383835;
+  --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 24px 48px; background: var(--plane); color: var(--ink);
+       font-family: var(--font); font-size: 14px; line-height: 1.5; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; margin: 24px 0 2px; }
+.unter { font-size: 12px; color: var(--ink-muted); margin: 0 0 12px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+         padding-bottom: 14px; margin-bottom: 4px; border-bottom: 1px solid var(--axis); }
+a { color: var(--s1); text-decoration: none; }
+a:hover { text-decoration: underline; }
+nav { margin-left: auto; display: flex; gap: 14px; font-size: 12px; }
+select { background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+         border-radius: 6px; padding: 5px 8px; font-family: var(--font); font-size: 13px; }
+
+.karte { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+         padding: 14px 16px; margin-top: 12px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; padding: 0 10px 8px 0;
+     border-bottom: 1px solid var(--axis); white-space: nowrap; }
+td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.zahl, th.zahl { text-align: right; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+tr.klickbar { cursor: pointer; }
+tr.klickbar:hover td { background: rgba(255,255,255,0.03); }
+.gering { color: var(--ink-muted); }
+.gruen { color: var(--good); } .rot { color: var(--critical); } .warn { color: var(--warning); }
+.kacheln { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.kachel { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+          padding: 10px 14px; min-width: 132px; }
+.kachel .wert { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kachel .titel { font-size: 11px; color: var(--ink-muted); text-transform: uppercase;
+                 letter-spacing: 0.04em; }
+pre { background: #000; border: 1px solid var(--ring); border-radius: 6px; padding: 10px 12px;
+      font-size: 12px; overflow: auto; max-height: 420px; white-space: pre-wrap;
+      word-break: break-word; margin: 0; }
+.leer { color: var(--ink-muted); padding: 24px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Einzellauf</h1>
+  <select id="auswahl"></select>
+  <nav><a href="/">Live-Ansicht</a><a href="/vergleich">Vergleich</a></nav>
+</header>
+<p class="unter">Ergebnis, Hardwarekurve und Protokoll aus demselben Zeitraum — der Punkt,
+an dem sich die gemeinsame Datenbank auszahlt.</p>
+
+<div id="inhalt"><p class="leer">Lade …</p></div>
+
+<script src="/static/vendor/uPlot.iife.min.js"></script>
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const zeit = (ts) => new Date(ts * 1000).toLocaleTimeString("de-DE");
+let diagramm = null;
+
+async function laeufeLaden() {
+  const d = await (await fetch("/api/laeufe?limit=200")).json();
+  const sel = document.getElementById("auswahl");
+  if (!d.laeufe.length) {
+    document.getElementById("inhalt").innerHTML =
+      '<p class="leer">Noch keine Laeufe. <code>python bench.py run --suite rauchtest</code></p>';
+    return null;
+  }
+  sel.innerHTML = d.laeufe.map(l =>
+    `<option value="${l.id}">#${l.id} ${esc(l.modell_alias)}`
+    + `${l.thinking ? "" : " (ohne Denken)"} — ${esc(l.notiz ?? "")}`
+    + ` — ${l.erfolge}/${l.ergebnisse} gruen</option>`).join("");
+  const gewuenscht = new URLSearchParams(location.search).get("id");
+  if (gewuenscht && d.laeufe.some(l => String(l.id) === gewuenscht)) sel.value = gewuenscht;
+  return Number(sel.value);
+}
+
+function kacheln(lauf, ergebnisse) {
+  const gruen = ergebnisse.filter(e => e.erfolg).length;
+  const verworfen = ergebnisse.filter(e => !e.messpunkt_gueltig).length;
+  const ausbruch = ergebnisse.filter(e => e.sandbox_verstoesse).length;
+  const dauer = lauf.ts_ende ? Math.round(lauf.ts_ende - lauf.ts_start) : null;
+  const k = (titel, wert, klasse = "") =>
+    `<div class="kachel"><div class="titel">${titel}</div>
+     <div class="wert ${klasse}">${wert}</div></div>`;
+  return '<div class="kacheln">'
+    + k("Ergebnis", `${gruen}/${ergebnisse.length}`, gruen === ergebnisse.length ? "gruen" : "")
+    + k("Modell", esc(lauf.modell_alias))
+    + k("Offload", esc(lauf.offload ?? "–"))
+    + k("Denken", lauf.thinking ? "an" : "aus")
+    + k("Laufzeit", dauer === null ? "–" : dauer + " s")
+    + k("Messpunkte verworfen", verworfen, verworfen ? "warn" : "gering")
+    + (ausbruch ? k("Sandbox-Ausbrueche", ausbruch, "rot") : "")
+    + "</div>";
+}
+
+function ergebnisTabelle(ergebnisse) {
+  const zeilen = ergebnisse.map((e, i) => `
+    <tr class="klickbar" data-i="${i}">
+      <td>${e.erfolg ? '<span class="gruen">gruen</span>' : '<span class="rot">rot</span>'}</td>
+      <td>${esc(e.titel)}<div class="gering" style="font-size:11px">${esc(e.schluessel)}
+          · D${e.durchgang} · ${esc(e.schwierigkeit ?? "")}</div></td>
+      <td class="zahl">${e.dauer_s ?? "–"} s</td>
+      <td class="zahl">${e.schritte ?? "–"}</td>
+      <td class="zahl">${e.tool_calls_korrekt ?? 0}/${e.tool_calls_erhalten ?? 0}</td>
+      <td class="zahl">${e.denk_tokens ?? 0}</td>
+      <td class="zahl ${e.messpunkt_gueltig ? "gering" : "warn"}">${e.nachladen_s ?? 0} s</td>
+      <td>${e.fehlergrund ? `<span class="warn">${esc(e.fehlergrund)}</span>` : ""}</td>
+    </tr>`).join("");
+  return `<h2>Ergebnisse</h2><div class="karte"><table><thead><tr>
+    <th></th><th>Aufgabe</th><th class="zahl">Dauer</th><th class="zahl">Schritte</th>
+    <th class="zahl">Tool-Calls</th><th class="zahl">Denk-Token</th>
+    <th class="zahl">Nachladen</th><th>Befund</th>
+  </tr></thead><tbody>${zeilen}</tbody></table></div>
+  <div id="detail"></div>`;
+}
+
+function kurveZeichnen(kurve) {
+  const el = document.getElementById("kurve");
+  if (!el || !kurve.length) return;
+  const x = kurve.map(p => p.ts);
+  const daten = [
+    x,
+    kurve.map(p => (p.vram_used_mib ?? 0) / 1024),
+    kurve.map(p => p.gpu_util_pct ?? 0),
+    kurve.map(p => p.llama_gen_tps ?? null),
+  ];
+  const breite = el.clientWidth || 900;
+  const opt = {
+    width: breite, height: 240,
+    scales: { x: { time: true } },
+    axes: [
+      { stroke: "#898781", grid: { stroke: "#2c2c2a" } },
+      { stroke: "#898781", grid: { stroke: "#2c2c2a" }, label: "VRAM GB / GPU %" },
+    ],
+    series: [
+      {},
+      { label: "VRAM GB", stroke: "#3987e5", width: 1.5 },
+      { label: "GPU %",   stroke: "#d95926", width: 1 },
+      { label: "tok/s",   stroke: "#199e70", width: 1 },
+    ],
+  };
+  if (diagramm) diagramm.destroy();
+  diagramm = new uPlot(opt, daten, el);
+}
+
+async function protokollLaden(runId) {
+  const d = await (await fetch(`/api/lauf/${runId}/protokoll?limit=60`)).json();
+  const el = document.getElementById("protokoll");
+  if (!el) return;
+  if (!d.eintraege.length) { el.innerHTML = '<p class="gering">Kein Protokoll.</p>'; return; }
+  el.innerHTML = "<pre>" + d.eintraege.map(e =>
+    `[${zeit(e.ts)}] ${e.richtung.toUpperCase()}\n${esc(e.inhalt).slice(0, 4000)}`
+  ).join("\n\n") + "</pre>";
+}
+
+async function anzeigen(runId) {
+  const d = await (await fetch(`/api/lauf/${runId}`)).json();
+  document.getElementById("inhalt").innerHTML =
+      kacheln(d.lauf, d.ergebnisse)
+    + ergebnisTabelle(d.ergebnisse)
+    + `<h2>Hardware waehrend des Laufs</h2>
+       <p class="unter">${d.kurve_punkte_gesamt} Messpunkte, fuer die Anzeige ausgeduennt.</p>
+       <div class="karte"><div id="kurve"></div></div>
+       <h2>Protokoll</h2>
+       <p class="unter">Die ersten 60 Eintraege aus <code>raw_logs</code>.</p>
+       <div class="karte" id="protokoll"></div>`;
+  kurveZeichnen(d.kurve);
+  protokollLaden(runId);
+
+  document.querySelectorAll("tr.klickbar").forEach(tr => tr.addEventListener("click", () => {
+    const e = d.ergebnisse[Number(tr.dataset.i)];
+    document.getElementById("detail").innerHTML =
+      `<h2>${esc(e.titel)} — Durchgang ${e.durchgang}</h2>
+       <div class="karte"><pre>${esc(e.fehlergrund ? "Befund: " + e.fehlergrund + "\n\n" : "")}`
+      + `${esc(e.sandbox_verstoesse ?? "")}</pre></div>`;
+  }));
+}
+
+(async () => {
+  const id = await laeufeLaden();
+  if (id === null) return;
+  await anzeigen(id);
+  document.getElementById("auswahl").addEventListener("change", (e) => {
+    history.replaceState(null, "", "?id=" + e.target.value);
+    anzeigen(Number(e.target.value));
+  });
+  window.addEventListener("resize", () => {
+    if (diagramm) diagramm.setSize({ width: document.getElementById("kurve").clientWidth,
+                                     height: 240 });
+  });
+})();
+</script>
+</body>
+</html>

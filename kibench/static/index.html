@@ -52,6 +52,12 @@ header {
   padding: 4px 10px; border: 1px solid var(--ring); border-radius: 999px;
 }
 .punkt { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-muted); }
+
+/* Die Auswertungsseiten aus Prompt C. Rechts im Kopf, damit sie die Filterzeile
+   nicht auseinanderziehen. */
+.seitenlinks { margin-left: auto; display: flex; gap: 14px; font-size: 12px; }
+.seitenlinks a { color: var(--s1); text-decoration: none; }
+.seitenlinks a:hover { text-decoration: underline; }
 .punkt.an   { background: var(--good); }
 .punkt.aus  { background: var(--ink-muted); }
 .punkt.warn { background: var(--warning); }
@@ -162,6 +168,10 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
     <button data-fenster="heute" aria-pressed="false">Heute</button>
     <button id="b-tabelle" aria-pressed="false">Tabelle</button>
   </div>
+  <nav class="seitenlinks">
+    <a href="/vergleich">Vergleich</a>
+    <a href="/lauf">Einzellauf</a>
+  </nav>
 </header>
 
 <div id="warnungen"></div>
