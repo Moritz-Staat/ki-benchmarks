@@ -112,11 +112,17 @@ def test_modelle_listet_alle_sechs_konfigurationen(client):
     assert "qwen-dense" in aliase and "qwen-moe" in aliase
     assert "qwen-dense-iq4" in aliase
     assert "llama3.2:3b" in aliase
-    # Die Sweep-Werte aus SETUP.md sind die Grundlage der tok/s-Warnschwelle.
+    # Die Sweep-Werte sind die Grundlage der tok/s-Warnschwelle und muessen zu
+    # dem passen, was die Startskripte tatsaechlich starten. Stand 18.08.2026
+    # nach dem Langkontext-Test: die Vorgaben sind die Alltagswerte, nicht die
+    # Spitzenwerte. -ngl 58 und --n-cpu-moe 16 sind schneller, lassen aber bei
+    # 28k Kontext nur 275 beziehungsweise 803 MiB frei - der Desktop allein
+    # schwankt um mehr als ein Gigabyte.
     moe = next(m for m in d["konfiguriert"] if m["alias"] == "qwen-moe")
-    assert moe["sweep_gen_tps"] == 64.40
+    assert moe["sweep_gen_tps"] == 68.88
+    assert moe["offload"] == "-ngl 99 --n-cpu-moe 20"
     iq4 = next(m for m in d["konfiguriert"] if m["alias"] == "qwen-dense-iq4")
-    assert iq4["quant"] == "IQ4_XS" and iq4["offload"] == "-ngl 58"
+    assert iq4["quant"] == "IQ4_XS" and iq4["offload"] == "-ngl 54"
 
 
 def test_llama_konfigurationen_haben_ein_wechselziel(client):

@@ -330,9 +330,12 @@ def laeufe(limit: int = Query(default=100, ge=1, le=1000)) -> dict:
 
 
 @app.get("/api/vergleich")
-def vergleich(suite: str | None = None) -> dict:
-    """Alle Konfigurationen nebeneinander - mit Streuung, nicht nur Mittelwert."""
-    return auswertung.vergleich(db.verbindung(), suite=suite)
+def vergleich(suite: str | None = None, alles: bool = False) -> dict:
+    """Alle Konfigurationen nebeneinander - mit Streuung, nicht nur Mittelwert.
+
+    `alles=true` nimmt die Abnahme-Suiten mit hinein, die sonst draussen bleiben.
+    """
+    return auswertung.vergleich(db.verbindung(), suite=suite, alles=alles)
 
 
 @app.get("/api/lauf/{run_id}")

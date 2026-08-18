@@ -20,6 +20,15 @@ import statistics
 from typing import Any
 
 
+# Suiten, die nicht bewertet werden. `sandbox-probe` enthaelt genau eine Aufgabe,
+# die per Konstruktion niemals bestehen kann - sie prueft die Sperre, nicht das
+# Modell. Zaehlte sie mit, wuerde ausgerechnet die Konfiguration schlechter
+# dastehen, mit der die Abnahme gefahren wurde. Aufgefallen beim ersten echten
+# Lauf: qwen-moe kam auf 0,889 statt 1,0, ohne eine einzige Aufgabe verfehlt zu
+# haben.
+NICHT_GEWERTET = ("sandbox-probe",)
+
+
 def _quote(treffer: int, gesamt: int) -> float | None:
     return round(treffer / gesamt, 3) if gesamt else None
 
@@ -57,15 +66,21 @@ def _ergebniszeilen(conn, run_ids: list[int] | None = None) -> list[dict]:
     return [{k: z[k] for k in z.keys()} for z in conn.execute(sql, parameter)]
 
 
-def vergleich(conn, suite: str | None = None) -> dict[str, Any]:
+def vergleich(conn, suite: str | None = None,
+              alles: bool = False) -> dict[str, Any]:
     """Alle Konfigurationen nebeneinander.
 
     Gruppiert wird nach Modell **und** Thinking-Modus - das sind unterschiedliche
     Betriebsarten desselben Modells, und Prompt C will sie getrennt sehen.
+
+    `alles=True` nimmt auch die Abnahme-Suiten mit hinein; ohne das bleiben sie
+    draussen, siehe NICHT_GEWERTET.
     """
     zeilen = _ergebniszeilen(conn)
     if suite:
         zeilen = [z for z in zeilen if (z.get("notiz") or "") == suite]
+    elif not alles:
+        zeilen = [z for z in zeilen if (z.get("notiz") or "") not in NICHT_GEWERTET]
 
     gruppen: dict[tuple, list[dict]] = {}
     for z in zeilen:

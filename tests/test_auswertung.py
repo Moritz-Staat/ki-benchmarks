@@ -192,3 +192,25 @@ def test_lauf_detail_verknuepft_hardwarekurve(test_db):
     assert len(d["ergebnisse"]) == 1
     assert d["kurve_punkte_gesamt"] >= 5
     assert d["kurve"][0]["vram_used_mib"] >= 14000
+
+
+def test_abnahme_suite_zaehlt_nicht_in_die_wertung(test_db):
+    """Aufgefallen beim ersten echten Lauf, nicht am Schreibtisch.
+
+    Die Ausbruchsprobe kann per Konstruktion nie bestehen. Zaehlte sie mit,
+    saehe ausgerechnet die Konfiguration schlechter aus, mit der die Abnahme
+    gefahren wurde - qwen-moe kam so auf 0,889 statt 1,0.
+    """
+    echt = _lauf(test_db, notiz="rauchtest")
+    probe = _lauf(test_db, notiz="sandbox-probe")
+    t1 = _aufgabe(test_db, "echte-aufgabe")
+    t2 = _aufgabe(test_db, "ausbruchsversuch", kategorie="sandbox")
+    _ergebnis(test_db, echt, t1, 1, True)
+    _ergebnis(test_db, probe, t2, 1, False, fehlergrund="sandbox_ausbruch")
+
+    k = auswertung.vergleich(test_db)["konfigurationen"]
+    assert len(k) == 1 and k[0]["erfolgsquote"] == 1.0
+
+    # Sichtbar bleibt sie trotzdem, wenn man sie sehen will.
+    mit = auswertung.vergleich(test_db, alles=True)["konfigurationen"][0]
+    assert mit["erfolgsquote"] == 0.5

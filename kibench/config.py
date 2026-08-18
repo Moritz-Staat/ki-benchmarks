@@ -41,25 +41,25 @@ MODELLE = [
         "name": "Qwen3.8-27B dense Q5",
         "runtime": "llama.cpp",
         "quant": "UD-Q5_K_XL",
-        "offload": "-ngl 46",
+        "offload": "-ngl 42",
         "wechsel_ziel": "dense",
         # Sweep-Werte aus SETUP.md, Basis fuer die tok/s-Warnschwelle.
         # Aus dem Wiederholungs-Sweep vom 18.08.2026, nicht aus Prompt A: der
         # erste Lauf mass mit aktivem Sysmem-Fallback und lieferte fuer -ngl 42
         # aufwaerts Zahlen, die den Treiber beschreiben und nicht das Modell.
-        "sweep_gen_tps": 7.34,
-        "sweep_prompt_tps": 608.3,
+        "sweep_gen_tps": 5.94,
+        "sweep_prompt_tps": 538.7,
     },
     {
         "alias": "qwen-dense-iq4",
         "name": "Qwen3.8-27B dense IQ4_XS",
         "runtime": "llama.cpp",
         "quant": "IQ4_XS",
-        "offload": "-ngl 58",
+        "offload": "-ngl 54",
         "wechsel_ziel": "dense-iq4",
         # Wiederholungs-Sweep 18.08.2026, wanduhrgeprueft.
-        "sweep_gen_tps": 18.38,
-        "sweep_prompt_tps": 1037.6,
+        "sweep_gen_tps": 14.04,
+        "sweep_prompt_tps": 896.3,
     },
     {
         "alias": "qwen-moe",
@@ -68,8 +68,8 @@ MODELLE = [
         "quant": "UD-Q4_K_XL",
         "offload": "-ngl 99 --n-cpu-moe 20",
         "wechsel_ziel": "moe",
-        "sweep_gen_tps": 64.40,
-        "sweep_prompt_tps": 377.3,
+        "sweep_gen_tps": 68.88,
+        "sweep_prompt_tps": 403.7,
     },
     {
         "alias": "qwen2.5:14b-instruct-q8_0",
